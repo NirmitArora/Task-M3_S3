@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
     print(v2, SZ);
    
     // Setup OpenCL device, context, program, kernel, and command queue
-    setup_openCL_device_context_queue_kernel((char *)"./vector_ops_ocl.cl", (char *)"vector_add_kernel");
+    setup_openCL_device_context_queue_kernel((char *)"./vector_ops_ocl.cl", (char *)"vector_add_ocl");
     // Setup OpenCL kernel memory buffers
     setup_kernel_memory();
     // Copy kernel arguments
@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
 
     // Start timer
     auto start = std::chrono::high_resolution_clock::now();
-    // Enqueue vector addition kernel for execution
+    // Enqueue kernel for execution
     clEnqueueNDRangeKernel(queue, kernel, 1, NULL, global, NULL, 0, NULL, &event);
     // Wait for kernel execution to finish
     clWaitForEvents(1, &event);
@@ -68,7 +68,6 @@ int main(int argc, char **argv) {
     // Calculate and print kernel execution time
     std::chrono::duration<double, std::milli> elapsed_time = stop - start;
     printf("Kernel Execution Time: %f ms\n", elapsed_time.count());
-
     // Free allocated memory and release OpenCL resources
     free_memory();
 }
@@ -122,20 +121,13 @@ void copy_kernel_args() {
     clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&bufV1);
     clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&bufV2);
     clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&bufV_out);
-    if (err < 0) {
-        perror("Couldn't create a kernel argument");
-        printf("error = %d", err);
-        exit(1);
-    }
 }
 
 // Function to setup kernel memory buffers
 void setup_kernel_memory() {
-    bufV1 = clCreateBuffer(context, CL_MEM_READ_ONLY, SZ * sizeof(int), NULL, NULL);
-    bufV2 = clCreateBuffer(context, CL_MEM_READ_ONLY, SZ * sizeof(int), NULL, NULL);
+    bufV1 = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, SZ * sizeof(int), v1, NULL);
+    bufV2 = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, SZ * sizeof(int), v2, NULL);
     bufV_out = clCreateBuffer(context, CL_MEM_WRITE_ONLY, SZ * sizeof(int), NULL, NULL);
-    clEnqueueWriteBuffer(queue, bufV1, CL_TRUE, 0, SZ * sizeof(int), &v1[0], 0, NULL, NULL);
-    clEnqueueWriteBuffer(queue, bufV2, CL_TRUE, 0, SZ * sizeof(int), &v2[0], 0, NULL, NULL);
 }
 
 // Function to setup OpenCL device, context, program, kernel, and command queue
@@ -148,15 +140,14 @@ void setup_openCL_device_context_queue_kernel(char *filename, char *kernelname) 
         exit(1);
     }
     program = build_program(context, device_id, filename);
-    queue = clCreateCommandQueueWithProperties(context, device_id, 0, &err);
-    if (err < 0) {
-        perror("Couldn't create a command queue");
-        exit(1);
-    }
     kernel = clCreateKernel(program, kernelname, &err);
     if (err < 0) {
         perror("Couldn't create a kernel");
-        printf("error =%d", err);
+        exit(1);
+    }
+    queue = clCreateCommandQueue(context, device_id, 0, &err);
+    if (err < 0) {
+        perror("Couldn't create a command queue");
         exit(1);
     }
 }
@@ -208,7 +199,7 @@ cl_device_id create_device() {
         perror("Couldn't identify a platform");
         exit(1);
     } 
-    err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 1, &dev, NULL);
+    err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &dev, NULL);
     if(err == CL_DEVICE_NOT_FOUND) {
         printf("GPU not found\n");
         err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 1, &dev, NULL);
